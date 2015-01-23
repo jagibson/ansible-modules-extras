@@ -54,13 +54,17 @@ EXAMPLES = '''
 
 # Create a ext4 filesystem on /dev/sdb1 and check disk blocks.
 - filesystem: fstype=ext4 dev=/dev/sdb1 opts="-cc"
+
+# Create a brtfs filesystem on /dev/sdb and /dev/sdc
+- filesystem: fstype=btrfs dev=['/dev/sdb', '/dev/sdc'] opts="-d raid1"
 '''
+#import itertools
 
 def main():
     module = AnsibleModule(
         argument_spec = dict(
             fstype=dict(required=True, aliases=['type']),
-            dev=dict(required=True, aliases=['device']),
+            dev=dict(type='list', required=True, aliases=['device']),
             opts=dict(),
             force=dict(type='bool', default='no'),
         ),
@@ -71,22 +75,34 @@ def main():
     fstype = module.params['fstype']
     opts = module.params['opts']
     force = module.boolean(module.params['force'])
+    sep = ' '
+    dev_string = sep.join(dev)
+    #from itertools import dev
+    #dev_string = itertools.chain.from_iterable(dev)
 
     changed = False
 
-    if not os.path.exists(dev):
-        module.fail_json(msg="Device %s not found."%dev)
-
-    cmd = module.get_bin_path('blkid', required=True)
-
-    rc,raw_fs,err = module.run_command("%s -c /dev/null -o value -s TYPE %s" % (cmd, dev))
-    fs = raw_fs.strip()
+    #print "dev is %s" % dev
+    #print "dev_string is %s" % dev_string
+    #print "force is %s" % force
+    #print "fstype is %s" % fstype
 
 
-    if fs == fstype:
-        module.exit_json(changed=False)
-    elif fs and not force:
-        module.fail_json(msg="'%s' is already used as %s, use force=yes to overwrite"%(dev,fs), rc=rc, err=err)
+    for dev_path in dev:
+        print "dev_path is %s" % dev_path
+        if not os.path.exists(dev_path):
+            module.fail_json(msg="Device %s not found."%dev_path)
+
+        cmd = module.get_bin_path('blkid', required=True)
+
+        rc,raw_fs,err = module.run_command("%s -c /dev/null -o value -s TYPE %s" % (cmd, dev_path))
+        fs = raw_fs.strip()
+
+
+        if fs == fstype:
+            module.exit_json(changed=False)
+        elif fs and not force:
+            module.fail_json(msg="'%s' is already used as %s, use force=yes to overwrite"%(dev_path,fs), rc=rc, err=err)
 
     ### create fs
 
@@ -103,14 +119,14 @@ def main():
           force_flag=""
 
         if opts is None:
-            cmd = "%s -t %s %s '%s'" % (mkfs, fstype, force_flag, dev)
+            cmd = "%s -t %s %s %s" % (mkfs, fstype, force_flag, dev_string)
         else:
-            cmd = "%s -t %s %s %s '%s'" % (mkfs, fstype, force_flag, opts, dev)
+            cmd = "%s -t %s %s %s %s" % (mkfs, fstype, force_flag, opts, dev_string)
         rc,_,err = module.run_command(cmd)
         if rc == 0:
             changed = True
         else:
-            module.fail_json(msg="Creating filesystem %s on device '%s' failed"%(fstype,dev), rc=rc, err=err)
+            module.fail_json(msg="Creating filesystem %s on device '%s' failed"%(fstype,dev_string), rc=rc, err=err)
 
     module.exit_json(changed=changed)
 
